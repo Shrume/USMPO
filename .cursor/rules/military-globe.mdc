@@ -1,0 +1,61 @@
+---
+description: Conventions for the military globe feature; isolate work under src/routes/military
+globs: src/routes/military/**
+alwaysApply: false
+---
+
+# Military globe — project conventions
+
+## Scope rule
+
+All new pages, layouts, server files, and route-local modules for this feature live under **`src/routes/military/`** only. Do not edit other routes (`src/routes/+page.svelte`, `uganglobe`, etc.) or shared libs unless explicitly requested.
+
+## SvelteKit / Svelte patterns (observed)
+
+- **`onMount`:** Used for browser-only setup: `IntersectionObserver` on layout (`main` / sidebar) and globe container (`ResizeObserver`, sticky scroll observer), and for **globe.gl** initialization inside `UGN-globe.svelte` (assigns `$UGNglobe = Globe()(...)`).
+- **`$app/environment`:** `import { browser } from '$app/environment'` — guard resize when not in browser.
+- **Props:** `export let aidArcs`, `conflicts`, `origin` (typed where used); legacy `UGN-globe` also used `bind:globeHoverCountry` / `bind:listHoverCountry` with parent stores.
+- **Reactivity:** `$:` blocks to push data into globe (`$UGNglobe.arcsData`, `.pointsData`), derive highlight colors, and derive panel content (`GlobeHoverPanel`: `conflict` / `aid` from stores).
+- **Lifecycle helpers:** `tick()` used in `GlobeMainIndex.svelte` before `pointOfView` so layout exists.
+- **Slots:** Root `+layout.svelte` uses `<slot />` inside `.globeColumn` for route outlet while chrome stays in layout.
+- **Routing:** `src/routes/uganglobe/+page.svelte` is redirect-only; document metadata can live in child `+page.svelte` with minimal markup.
+
+## Store patterns
+
+- **Module:** `src/store/store.ts` — `import { writable, type Writable } from 'svelte/store'`.
+- **Naming:** `UGN` prefix + **camelCase** store names (`UGNglobe`, `UGNaltOffset`, `UGNglobeHoverCountry`, `UGNlistHoverCountry`, …).
+- **Globe instance:** `Writable<GlobeInstance | null>` initialized `null`, set in `onMount`.
+- **Pairing hover:** For each entity, separate **globe-originated** and **list-originated** writables (e.g. `UGNglobeHoverConflict` / `UGNlistHoverConflict` as used in `GlobeMainIndex.svelte`, `GlobeHoverPanel.svelte`, `UGN-globe.svelte`).
+- **Reads / writes:** Auto-subscription `$store` in components; assignment `$store = value` from handlers.
+
+## Hover sync (globe ↔ list)
+
+- **Globe → store:** globe.gl callbacks (e.g. `.onArcHover`, `.onPointHover`) set the `*globeHover*` store, then refresh color accessors so non-hovered items dim.
+- **List → store:** Row `<button>` uses `on:pointerenter` / `on:pointerleave` to set / clear `*listHover*`.
+- **Precedence:** Combined highlight uses **list over globe**: e.g. `$UGNlistHoverConflict ?? $UGNglobeHoverConflict` (same for aid arcs). Color helpers mirror that when calling `setArcColors` / `setPointColors`.
+- **Row UI:** `class:hover` when globe or list matches row; `class:dim` when a globe hover is active and this row is not the target (dims siblings while hovering from globe).
+
+## Component and file naming
+
+- **Lib components:** Prefix **`UGN-`** for this product line (`UGN-globe.svelte`, `UGN-checkboxes.svelte`); SVGs under `$lib/SVGs/UGN-*.svelte`.
+- **Feature-specific:** `GlobeMainIndex.svelte`, `GlobeHoverPanel.svelte` (PascalCase, descriptive).
+- **DOM classes:** **kebab-case** where used (e.g. `globeColumn`, `scrollToTop-observer`) or single camelCase words (`hoverPanel`, `mainIndex`); BEM-like modifiers as separate classes (`hover`, `dim`, `offScreen`) or `class:dim` / `class:hover`.
+
+## CSS / SCSS conventions
+
+- **Tokens:** Scoped on `body` as `--_*` custom properties in route layout `<style lang="scss">`.
+- **Breakpoints:** SCSS vars `$UGNbp-tablet` (1200px), `$UGNbp-mobile` (650px) from prepended `src/styles` (`@use "src/styles" as *` in `svelte.config.js`).
+- **`:global`** for `body`, `html`, shared classes injected into globe.gl HTML (e.g. `.arcLabel`), and skip-link styles.
+- **Focus:** Custom outline via `--_focus-outline`; reset removes default `outline`, restored with `:focus-visible` on interactive controls.
+
+## TypeScript patterns
+
+- **Types:** `export type` in store module; domain types `import type { AidArc, Conflict } from '../routes/data'` (path relative to importing file).
+- **globe.gl typing:** `GlobeInstance` from `globe.gl`; callback payloads often typed inline as `any` then cast (`as AidArc`, `as Conflict`).
+- **DOM APIs:** Fullscreen toggles cast `document` / `document.documentElement` to widened types for vendor-prefixed methods.
+- **Imports:** Svelte 4 style `export let`; strict typing on props where declared.
+
+## Data / head
+
+- Route-level constants imported from colocated `data` module (e.g. `AID_ARCS`, `CONFLICTS`, `ORIGIN`).
+- SEO copy in `+page.svelte` via `<svelte:head>` where that route only supplies head.

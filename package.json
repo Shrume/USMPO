@@ -25,6 +25,7 @@
 	"dependencies": {
 		"@mediapipe/tasks-vision": "^0.10.12",
 		"@types/three": "^0.149.0",
+		"flag-icons": "^7.5.0",
 		"globe.gl": "^2.27.1",
 		"three": "^0.150.1"
 	}
