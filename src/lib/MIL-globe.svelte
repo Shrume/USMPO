@@ -210,6 +210,21 @@
         return m;
     })();
 
+    $: distRankMap = (() => {
+        const sorted = [...entries]
+            .map((e) => ({
+                e,
+                dist: geoDistanceRadians(
+                    [(origin.lng * Math.PI) / 180, (origin.lat * Math.PI) / 180],
+                    [(e.lng * Math.PI) / 180, (e.lat * Math.PI) / 180]
+                )
+            }))
+            .sort((a, b) => a.dist - b.dist);
+        const m = new Map<string, number>();
+        sorted.forEach(({ e }, i) => m.set(e.id, i));
+        return m;
+    })();
+
     function flyToEntry(e: CountryEntry) {
         const g = get(UGNglobe);
         if (!g) return;
@@ -259,6 +274,19 @@
         $UGNglobeClicked = null;
     }
 
+    function fixArcMaterials() {
+        if (!$UGNglobe) return;
+        $UGNglobe.scene().traverse((obj: any) => {
+            if (obj.__globeObjType === 'arc') {
+                const mesh = obj.children[0];
+                if (mesh?.material) {
+                    mesh.material.depthWrite = false;
+                    mesh.material.needsUpdate = true;
+                }
+            }
+        });
+    }
+
     $: if (browser && $UGNglobe && globeViz) {
         queueMicrotask(() => resizeGlobe());
     }
@@ -280,6 +308,7 @@
             .showAtmosphere(false)
             .onGlobeReady(() => {
                 setTimeout(() => startArcAnimation(), 800);
+                setTimeout(() => fixArcMaterials(), 800 + 1200 + 600);
                 setTimeout(() => {
                     canInteract = true;
                     $UGNglobe?.controls().addEventListener('start', () => {
@@ -334,11 +363,11 @@
                 const startLat = (fo.lat * Math.PI) / 180;
                 const endLng = (e.lng * Math.PI) / 180;
                 const endLat = (e.lat * Math.PI) / 180;
-                const altAutoScale = 0.5;
-                const baseAlt = (geoDistanceRadians([startLng, startLat], [endLng, endLat]) / 2) * altAutoScale;
-                const rank = rankMap.get(e.id) ?? 0;
+                const dist = geoDistanceRadians([startLng, startLat], [endLng, endLat]);
+                const normalizedDist = dist / Math.PI;
+                const distRank = distRankMap.get(e.id) ?? 0;
                 const n = entries.length;
-                return baseAlt + (n ? (rank / n) * 0.15 : 0);
+                return 0.02 + Math.pow(normalizedDist, 1.6) * 0.9 + (distRank / n) * 0.04;
             })
             .arcLabel(
                 (arc: any) => {
@@ -387,6 +416,7 @@
 
         if ($UGNglobe) {
             $UGNglobe.arcsData(entries);
+            setTimeout(() => fixArcMaterials(), 100);
             $UGNglobe.pointOfView({ lat: 30, lng: -60, altitude: 2.2 }, 0);
             curAlt = 2.2;
         }
