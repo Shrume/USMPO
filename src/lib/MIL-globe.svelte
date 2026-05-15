@@ -9,15 +9,16 @@
         UGNhoveredEntry,
         UGNclickedEntry,
         UGNglobeClicked,
-        UGNaltOffset
+        UGNaltOffset,
+        UGNgoHome
     } from '../store/military-store';
     import type { CountryEntry } from '../routes/military/data';
     import countries from '$lib/globe-countries.json';
     import Plus from '$lib/SVGs/UGN-plus.svelte';
     import Minus from '$lib/SVGs/UGN-minus.svelte';
     import UpIndicactor from '$lib/SVGs/UGN-upIndicactor.svelte';
-    import EnterFullscreen from '$lib/SVGs/UGN-enterFullscreen.svelte';
-    import ExitFullscreen from '$lib/SVGs/UGN-exitFullscreen.svelte';
+    import Info from '$lib/SVGs/UGN-info.svelte';
+    import Close from '$lib/SVGs/UGN-close.svelte';
 
     export let entries: CountryEntry[];
     export let origin: { lat: number; lng: number };
@@ -28,8 +29,12 @@
     let scrollToTopObserver: HTMLElement;
 
     let curAlt = 0;
-    let allowFullscreen = false;
-    let isFullscreen = false;
+    let aboutOpen = false;
+    let canInteract = false;
+    let globeMoved = false;
+    let isResetting = false;
+
+    $: globeInteracted = $UGNclickedEntry !== null || (canInteract && curAlt < 2.0);
 
     let animRAF: number | null = null;
     let animStart: number | null = null;
@@ -217,6 +222,7 @@
             },
             700
         );
+        globeMoved = true;
     }
 
     function zoom(type: 'in' | 'out'): void {
@@ -226,39 +232,14 @@
         $UGNglobe.pointOfView({ altitude: curAlt + altChange }, 200);
     }
 
-    function checkFullscreen(): void {
-        const d = document as Document & Record<string, unknown>;
-        isFullscreen = !!(
-            document.fullscreenElement ||
-            d.mozFullScreenElement ||
-            d.webkitFullscreenElement ||
-            d.msFullscreenElement
-        );
-    }
-
-    function toggleFullscreen(): void {
-        if (!allowFullscreen) return;
-
-        const doc = document as Document & Record<string, (...args: unknown[]) => unknown>;
-        const docEl = document.documentElement as HTMLElement & Record<string, (...args: unknown[]) => unknown>;
-
-        if (isFullscreen) {
-            const cancelFullScreen =
-                doc.exitFullscreen ||
-                doc.mozCancelFullScreen ||
-                doc.webkitExitFullscreen ||
-                doc.msExitFullscreen;
-            (cancelFullScreen as () => void).call(document);
-            isFullscreen = false;
-        } else {
-            const requestFullScreen =
-                docEl.requestFullscreen ||
-                docEl.mozRequestFullScreen ||
-                docEl.webkitRequestFullScreen ||
-                docEl.msRequestFullscreen;
-            (requestFullScreen as () => void).call(docEl);
-            isFullscreen = true;
-        }
+    function resetView(): void {
+        if ($UGNglobe) $UGNglobe.pointOfView({ lat: 30, lng: -60, altitude: 2.2 }, 700);
+        UGNgoHome.update((n) => n + 1);
+        globeMoved = false;
+        isResetting = true;
+        setTimeout(() => {
+            isResetting = false;
+        }, 750);
     }
 
     /** globe.gl ignores raycast misses (`if (!obj) return`) so `onGlobeClick` never runs for empty canvas. */
@@ -298,6 +279,12 @@
             .showAtmosphere(false)
             .onGlobeReady(() => {
                 setTimeout(() => startArcAnimation(), 800);
+                setTimeout(() => {
+                    canInteract = true;
+                    $UGNglobe?.controls().addEventListener('start', () => {
+                        if (!isResetting) globeMoved = true;
+                    });
+                }, 800 + 1200 + 400);
             })
             .polygonsData(countries.features)
             .polygonCapColor((feature: any) =>
@@ -355,13 +342,13 @@
             .arcLabel(
                 (arc: any) => {
                     const e = arc as CountryEntry;
-                    return `<div style="font-family:'Manrope',sans-serif; display:inline-flex; flex-direction:column; gap:4px; padding:8px 10px; background:#fff; border-radius:0; border:1px solid rgba(0,0,0,0.1); box-shadow:0 1px 4px rgba(0,0,0,0.12); white-space:nowrap">
+                    return `<div style="font-family:'Manrope',sans-serif; display:inline-flex; flex-direction:column; gap:8px; padding:10px 10px; background:#fff; border-radius:0; border:1px solid rgba(0,0,0,0.1); box-shadow:0 1px 4px rgba(0,0,0,0.12); white-space:nowrap">
   <div style="display:flex; align-items:center; gap:6px">
     <img src="https://flagicons.lipis.dev/flags/4x3/${e.flagCode}.svg" alt="" style="width:16px; height:12px; object-fit:cover; flex-shrink:0" />
     <span style="font-weight:700; font-size:12px; color:#1a1a1a">${e.country.replace(/\s*\(.*?\)/g, '')}</span>
   </div>
-  <div style="display:flex; gap:4px">
-    <span style="background:#1a1a1a; color:#fff; padding:1px 0; font-size:12px; line-height:1.4; font-weight:600; width:3.5rem; text-align:center; display:inline-block">${e.persistentBases}</span>
+  <div style="display:flex; gap:8px">
+    <span style="background:#bd2147; color:#fff; padding:1px 0; font-size:12px; line-height:1.4; font-weight:600; width:3.5rem; text-align:center; display:inline-block">${e.persistentBases}</span>
     <span style="background:#2563eb; color:#fff; padding:1px 0; font-size:12px; line-height:1.4; font-weight:600; width:3.5rem; text-align:center; display:inline-block">${e.troops.toLocaleString()}</span>
   </div>
 </div>`;
@@ -406,7 +393,13 @@
         const { w: cw, h: ch } = globeLayoutSize();
         if (cw <= ch) $UGNaltOffset = 0.6;
 
-        $UGNglobe.onZoom((pov) => (curAlt = pov.altitude));
+        $UGNglobe.onZoom((pov) => {
+            curAlt = pov.altitude;
+            if (canInteract) {
+                globeInteracted = $UGNclickedEntry !== null || curAlt < 2.0;
+                if (!isResetting) globeMoved = true;
+            }
+        });
 
         const intersectionObserver = new IntersectionObserver((entries) => {
             entries.forEach((entry) => {
@@ -418,9 +411,6 @@
 
         const resizeObserver = new ResizeObserver(() => resizeGlobe());
         resizeObserver.observe(globeContainer);
-
-        allowFullscreen = !!document.fullscreenEnabled;
-        checkFullscreen();
 
         return () => {
             if (animRAF) cancelAnimationFrame(animRAF);
@@ -436,6 +426,13 @@
     });
 </script>
 
+<svelte:head>
+    <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=my_location"
+    />
+</svelte:head>
+
 <div class="globeContainer" tabindex="-1" bind:this={globeContainer}>
     <div
         id="globeViz-military"
@@ -443,8 +440,11 @@
         bind:this={globeViz}
         on:click={handleGlobeVizBackdropClick}
     ></div>
-    {#if !$UGNclickedEntry}
-        <div class="globeProjectTitle">
+    <div class="globeProjectTitleClip">
+        <div
+            class="globeProjectTitle"
+            style:transform={globeInteracted ? 'translateY(-100%)' : 'translateY(0)'}
+        >
             <h1 class="projectTitle" aria-label="US Military Projection Overseas">
                 <img
                     class="flag"
@@ -455,8 +455,14 @@
                 <span class="projectTitleText">Military Projection Overseas</span>
             </h1>
         </div>
-    {/if}
+    </div>
     <div class="controls" bind:this={controlsEl}>
+        {#if globeMoved}
+            <button class="zoom zoomHome" type="button" on:click={resetView}>
+                <span class="visuallyHidden">reset view</span>
+                <span class="myLocationIcon" aria-hidden="true">my_location</span>
+            </button>
+        {/if}
         <button
             class="zoom"
             type="button"
@@ -475,19 +481,25 @@
             <span class="visuallyHidden">zoom out</span>
             <Minus />
         </button>
-        <button
-            class="fullscreen"
-            type="button"
-            on:click={toggleFullscreen}
-            disabled={!allowFullscreen}
-        >
-            {#if isFullscreen}
-                <span class="visuallyHidden">exit fullscreen</span>
-                <ExitFullscreen />
-            {:else}
-                <span class="visuallyHidden">enter fullscreen</span>
-                <EnterFullscreen />
-            {/if}
+    </div>
+
+    <div class="aboutWrap">
+        {#if aboutOpen}
+            <div class="aboutPanel">
+                <p>Data sourced from the <a href="https://dwp.dmdc.osd.mil/dwp/app/main" target="_blank" rel="noopener">Defense Manpower Data Center (DMDC)</a> and the <a href="https://crsreports.congress.gov/product/pdf/R/R48123" target="_blank" rel="noopener">Congressional Research Service Report R48123</a>.</p>
+                <p>Inspired by and built on the work of <a href="https://www.richardfxr.com/" target="_blank" rel="noopener">Richard Fu</a>. Designed and developed by <a href="https://shrumezuo.com/" target="_blank" rel="noopener">Shrume Zuo</a>. <a href="https://www.khronos.org/webgl/" target="_blank" rel="noopener">WebGL</a> globe powered by <a href="https://globe.gl/" target="_blank" rel="noopener">globe.gl</a>.</p>
+                <p>A term project for <em>Propaganda</em> at RISD, taught by <a href="https://www.risd.edu/academics/history-philosophy-and-social-sciences/faculty/tom-roberts" target="_blank" rel="noopener">Tom Roberts</a> in his final semester after 43 years of teaching.</p>
+            </div>
+        {/if}
+        <button class="zoom" type="button" on:click={() => (aboutOpen = !aboutOpen)}>
+            <span class="visuallyHidden">{aboutOpen ? 'close about' : 'about this project'}</span>
+            <span class="aboutIcon">
+                {#if aboutOpen}
+                    <Close />
+                {:else}
+                    <Info />
+                {/if}
+            </span>
         </button>
     </div>
 
@@ -536,14 +548,19 @@
         overflow: hidden;
     }
 
-    .globeProjectTitle {
+    .globeProjectTitleClip {
         position: absolute;
         top: 0;
         left: 0;
         right: 0;
+        overflow: hidden;
+    }
+
+    .globeProjectTitle {
         z-index: 1;
         pointer-events: none;
         box-sizing: border-box;
+        transition: transform 0.35s ease;
     }
 
     /* Match `.statBar` / `.statBar--bases` in `military/+page.svelte` (padding, type scale, weight). */
@@ -581,7 +598,7 @@
     .controls {
         display: flex;
         flex-flow: column nowrap;
-        align-items: stretch;
+        align-items: flex-end;
         gap: 0;
         position: absolute;
         bottom: var(--_pad-border);
@@ -597,8 +614,9 @@
             justify-content: center;
             color: var(--_clr-800);
             position: relative;
-
-            padding: var(--_pad-xl) var(--_pad-xl);
+            width: 44px;
+            height: 44px;
+            padding: 0;
             background-color: var(--_clr-100);
             border: none;
             border-radius: 0;
@@ -637,49 +655,105 @@
                 background-color: var(--_clr-100);
             }
         }
+    }
 
-        .fullscreen {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-top: var(--_pad-md);
-            color: var(--_clr-800);
-            padding: var(--_pad-xl) var(--_pad-xl);
-            background-color: var(--_clr-100);
-            border: none;
-            border-radius: 0;
-            cursor: pointer;
-            font: inherit;
+    .zoomHome {
+        margin-bottom: var(--_pad-md);
+    }
 
-            transition:
-                color var(--_trans-fast),
-                background-color var(--_trans-fast);
+    .myLocationIcon {
+        font-family: 'Material Symbols Outlined';
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        font-size: 20px;
+        line-height: 1;
+        display: block;
+        color: inherit;
+    }
 
-            :global(.icon) {
-                display: block;
-                width: 15px;
+    .aboutWrap {
+        position: absolute;
+        bottom: var(--_pad-border);
+        left: var(--_pad-border);
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+    }
+
+    .aboutWrap .zoom {
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--_clr-800);
+        background-color: var(--_clr-100);
+        border: none;
+        border-radius: 0;
+        cursor: pointer;
+        font: inherit;
+        transition:
+            color var(--_trans-fast),
+            background-color var(--_trans-fast);
+
+        :global(.icon) {
+            display: block;
+            width: 20px;
+        }
+
+        &:hover,
+        &:focus {
+            color: var(--_clr-900);
+            background-color: var(--_clr-150);
+        }
+
+        &:focus-visible {
+            outline-offset: calc(-1 * var(--_focus-outline-width));
+            outline: var(--_focus-outline);
+            z-index: 50;
+        }
+
+        &:active {
+            color: var(--_clr-1000);
+            background-color: var(--_clr-300);
+        }
+    }
+
+    .aboutIcon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        :global(.icon) {
+            display: block;
+            width: 15px;
+        }
+    }
+
+    .aboutPanel {
+        background: var(--_clr-50);
+        border-radius: 0;
+        padding: var(--_pad-border);
+        margin-bottom: var(--_pad-md);
+        font-size: var(--_font-sm);
+        color: var(--_clr-800);
+        max-width: 480px;
+        line-height: 1.6;
+
+        p {
+            margin: 0 0 var(--_pad-lg);
+
+            &:last-child {
+                margin-bottom: 0;
             }
+        }
 
-            &:hover,
-            &:focus {
-                color: var(--_clr-900);
-                background-color: var(--_clr-150);
-            }
-
-            &:focus-visible {
-                outline-offset: calc(-1 * var(--_focus-outline-width));
-                outline: var(--_focus-outline);
-                z-index: 50;
-            }
-
-            &:active {
-                color: var(--_clr-1000);
-                background-color: var(--_clr-300);
-            }
-
-            &:disabled {
-                display: none;
-            }
+        a {
+            color: inherit;
+            text-decoration: underline;
+            text-underline-offset: 2px;
         }
     }
 

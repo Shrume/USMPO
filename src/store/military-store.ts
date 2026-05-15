@@ -16,3 +16,5 @@ export const UGNglobeClicked: Writable<CountryEntry | null> = writable(null);
 
 export const UGNglobe: Writable<GlobeInstance | null> = writable(null);
 export const UGNaltOffset: Writable<number> = writable(0);
+
+export const UGNgoHome: Writable<number> = writable(0);

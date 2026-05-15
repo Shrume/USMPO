@@ -1,15 +1,17 @@
 <script lang="ts">
     import { tick } from 'svelte';
+    import { fly } from 'svelte/transition';
     import { get } from 'svelte/store';
     import {
         UGNglobe,
         UGNaltOffset,
         UGNhoveredEntry,
         UGNclickedEntry,
-        UGNglobeClicked
+        UGNglobeClicked,
+        UGNgoHome
     } from '../../store/military-store';
     import { ENTRIES, TOTAL_BASES, TOTAL_TROOPS } from './data';
-    import type { CountryEntry } from './data';
+    import type { CountryEntry, Base } from './data';
     import LeftArrow from '$lib/SVGs/UGN-leftArrow.svelte';
 
     $: activeEntry = $UGNhoveredEntry ?? $UGNclickedEntry;
@@ -17,6 +19,71 @@
     $: sortedEntries = [...ENTRIES].sort((a, b) => b.persistentBases - a.persistentBases);
 
     let listContainer: HTMLDivElement;
+    let visibleEntries: CountryEntry[] = [];
+
+    async function startCascade() {
+        visibleEntries = [];
+        await tick();
+        const total = sortedEntries.length;
+        const maxDuration = 1000;
+        const baseDelay = 60;
+        const stagger = total > 1 ? Math.min(50, (maxDuration - baseDelay) / (total - 1)) : 0;
+        sortedEntries.forEach((entry, i) => {
+            setTimeout(() => {
+                visibleEntries = [...visibleEntries, entry];
+            }, baseDelay + i * stagger);
+        });
+    }
+
+    $: if ($UGNclickedEntry === null) startCascade();
+
+    let visibleBases: Base[] = [];
+
+    let sidebarEl: HTMLElement;
+    let viewWrapperEl: HTMLElement;
+    let animating = false;
+    let lastEntry: CountryEntry | null = null;
+    let lastHandledGoHome = 0;
+
+    let ghostVisible = false;
+    let ghostFlagSrc = '';
+    let ghostName = '';
+    let ghostY = 0;
+    let ghostScale = 1;
+
+    let ghostBarsVisible = false;
+    let ghostBarShift = 0;
+    let ghostBarLabel1 = 'Overseas bases';
+    let ghostBarVal1 = String(TOTAL_BASES);
+    let ghostBarLabel2 = 'Overseas troops';
+    let ghostBarVal2 = TOTAL_TROOPS.toLocaleString();
+
+    let measuredEndY = 43;
+    let measuredBarsShift = 104;
+    let ghostFlagWidth = 1.8;
+    let ghostFontSize = 1.1;
+    let ghostGap = 10;
+    let ghostPaddingTop = 12;
+
+    async function startBaseCascade(bases: Base[]) {
+        visibleBases = [];
+        await tick();
+        const total = bases.length;
+        const baseDelay = 60;
+        const stagger = total > 1 ? Math.min(50, 400 / Math.max(1, bases.length - 1)) : 0;
+        bases.forEach((base, i) => {
+            setTimeout(() => {
+                visibleBases = [...visibleBases, base];
+            }, baseDelay + i * stagger);
+        });
+    }
+
+    $: if ($UGNclickedEntry !== null) startBaseCascade($UGNclickedEntry.bases);
+
+    $: if ($UGNgoHome > lastHandledGoHome) {
+        lastHandledGoHome = $UGNgoHome;
+        if ($UGNclickedEntry !== null) animateBack();
+    }
 
     /**
      * Prefer the inner list (`.listScroll`) when it actually scrolls; otherwise the layout
@@ -27,6 +94,10 @@
         const sidebar = list.closest<HTMLElement>('.sidebar');
         if (sidebar && sidebar.scrollHeight > sidebar.clientHeight + 1) return sidebar;
         return list;
+    }
+
+    function easeInOut(t: number): number {
+        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
     }
 
     /** List autoscroll only for globe arc/polygon hover or click (`UGNglobeClicked`), never list hover. */
@@ -69,13 +140,151 @@
         );
     }
 
+    async function animateForward(entry: CountryEntry) {
+        if (animating) return;
+        animating = true;
+        lastEntry = entry;
+
+        const clickedBtn = listContainer?.querySelector(`[data-entry-id="${entry.id}"]`);
+        const sidebarRect = sidebarEl.getBoundingClientRect();
+        const rowRect = clickedBtn?.getBoundingClientRect();
+        const startY = rowRect ? rowRect.top - sidebarRect.top + rowRect.height / 2 - 14 : 80;
+
+        const END_Y = measuredEndY;
+        const BARS_SHIFT = measuredBarsShift;
+        const DUR = 360;
+
+        ghostFlagSrc = `https://flagicons.lipis.dev/flags/4x3/${entry.flagCode}.svg`;
+        ghostName = entry.country.replace(/\s*\(.*?\)/g, '');
+        ghostY = startY;
+        ghostFlagWidth = 1.8;
+        ghostFontSize = 1.1;
+        ghostGap = 10;
+        ghostPaddingTop = 12;
+        ghostVisible = true;
+
+        ghostBarLabel1 = 'Overseas bases';
+        ghostBarVal1 = String(TOTAL_BASES);
+        ghostBarLabel2 = 'Overseas troops';
+        ghostBarVal2 = TOTAL_TROOPS.toLocaleString();
+        ghostBarShift = 0;
+        ghostBarsVisible = true;
+
+        if (viewWrapperEl) viewWrapperEl.style.opacity = '0';
+        await tick();
+
+        let textSwapped = false;
+        await new Promise<void>((resolve) => {
+            let start: number | null = null;
+            function frame(ts: number) {
+                if (!start) start = ts;
+                const t = Math.min(1, (ts - start) / DUR);
+                const p = easeInOut(t);
+                ghostY = startY + (END_Y - startY) * p;
+                ghostFlagWidth = 1.8 + (3 - 1.8) * p;
+                ghostFontSize = 1.1 + (1.2 - 1.1) * p;
+                ghostGap = 10 + (12 - 10) * p;
+                ghostPaddingTop = 12 + (15 - 12) * p;
+                ghostBarShift = BARS_SHIFT * p;
+                if (t > 0.5 && !textSwapped) {
+                    textSwapped = true;
+                    ghostBarLabel1 = 'Overseas bases';
+                    ghostBarVal1 = String(entry.persistentBases);
+                    ghostBarLabel2 = 'Overseas troops';
+                    ghostBarVal2 = entry.troops.toLocaleString();
+                }
+                if (t < 1) requestAnimationFrame(frame);
+                else resolve();
+            }
+            requestAnimationFrame(frame);
+        });
+
+        $UGNclickedEntry = entry;
+        $UGNglobeClicked = null;
+        flyToEntry(entry);
+        await tick();
+
+        const detailFlagEl = sidebarEl.querySelector('.detailFlag');
+        const detailBarEl = sidebarEl.querySelector('.statBar--bases');
+        if (detailFlagEl && detailBarEl) {
+            const sr = sidebarEl.getBoundingClientRect();
+            measuredEndY = detailFlagEl.getBoundingClientRect().top - sr.top - 15;
+            measuredBarsShift = detailBarEl.getBoundingClientRect().top - sr.top;
+        }
+
+        ghostVisible = false;
+        ghostBarsVisible = false;
+        if (viewWrapperEl) viewWrapperEl.style.removeProperty('opacity');
+        animating = false;
+    }
+
+    async function animateBack() {
+        if (animating || !lastEntry) {
+            $UGNclickedEntry = null;
+            $UGNhoveredEntry = null;
+            $UGNglobeClicked = null;
+            return;
+        }
+        animating = true;
+
+        const detailFlagEl = sidebarEl.querySelector('.detailFlag');
+        const detailBarEl = sidebarEl.querySelector('.statBar--bases');
+        if (detailFlagEl && detailBarEl) {
+            const sr = sidebarEl.getBoundingClientRect();
+            measuredEndY = detailFlagEl.getBoundingClientRect().top - sr.top - 15;
+            measuredBarsShift = detailBarEl.getBoundingClientRect().top - sr.top;
+        }
+
+        const BARS_SHIFT = measuredBarsShift;
+        const DUR = 320;
+
+        ghostVisible = false;
+
+        ghostBarLabel1 = 'Overseas bases';
+        ghostBarVal1 = String(lastEntry.persistentBases);
+        ghostBarLabel2 = 'Overseas troops';
+        ghostBarVal2 = lastEntry.troops.toLocaleString();
+        ghostBarShift = BARS_SHIFT;
+        ghostBarsVisible = true;
+
+        if (viewWrapperEl) viewWrapperEl.style.opacity = '0';
+        $UGNclickedEntry = null;
+        $UGNhoveredEntry = null;
+        $UGNglobeClicked = null;
+        await tick();
+
+        let textSwapped = false;
+        await new Promise<void>((resolve) => {
+            let start: number | null = null;
+            function frame(ts: number) {
+                if (!start) start = ts;
+                const t = Math.min(1, (ts - start) / DUR);
+                const p = easeInOut(t);
+                ghostBarShift = BARS_SHIFT * (1 - p);
+                if (t > 0.45 && !textSwapped) {
+                    textSwapped = true;
+                    ghostBarLabel1 = 'Overseas bases';
+                    ghostBarVal1 = String(TOTAL_BASES);
+                    ghostBarLabel2 = 'Overseas troops';
+                    ghostBarVal2 = TOTAL_TROOPS.toLocaleString();
+                }
+                if (t < 1) requestAnimationFrame(frame);
+                else resolve();
+            }
+            requestAnimationFrame(frame);
+        });
+
+        ghostBarsVisible = false;
+        if (viewWrapperEl) viewWrapperEl.style.removeProperty('opacity');
+        animating = false;
+    }
+
     function onRowClick(e: CountryEntry) {
         $UGNglobeClicked = null;
         if (get(UGNclickedEntry)?.id === e.id) {
             $UGNclickedEntry = null;
         } else {
-            $UGNclickedEntry = e;
-            flyToEntry(e);
+            animateForward(e);
         }
     }
 
@@ -97,11 +306,40 @@
     />
 </svelte:head>
 
-<div class="sidebarInner">
-    {#if $UGNclickedEntry}
+<div class="sidebarInner" bind:this={sidebarEl}>
+    {#if ghostBarsVisible}
+        <div class="ghostBars" style:transform="translateY({ghostBarShift}px)">
+            <div class="statBar statBar--bases">
+                <span>{ghostBarLabel1}</span><span>{ghostBarVal1}</span>
+            </div>
+            <div class="statBar statBar--troops">
+                <span>{ghostBarLabel2}</span><span>{ghostBarVal2}</span>
+            </div>
+        </div>
+    {/if}
+
+    {#if ghostVisible}
+        <div
+            class="ghostHeader"
+            style:top="{ghostY}px"
+            style:transform="scale({ghostScale})"
+            style:gap="{ghostGap}px"
+            style:padding-top="{ghostPaddingTop}px"
+        >
+            <img class="ghostFlag" src={ghostFlagSrc} alt="" style:width="{ghostFlagWidth}rem" />
+            <span class="ghostName" style:font-size="{ghostFontSize}rem">{ghostName}</span>
+        </div>
+    {/if}
+
+    <div
+        class="viewWrapper"
+        bind:this={viewWrapperEl}
+        style:pointer-events="{animating ? 'none' : 'auto'}"
+    >
+        {#if $UGNclickedEntry}
         {@const d = $UGNclickedEntry}
         <div class="detailView">
-            <button type="button" class="back backBtn" on:click={backToCountryList}>
+            <button type="button" class="back backBtn" on:click={animateBack}>
                 <LeftArrow />
                 <span>All Countries</span>
             </button>
@@ -116,12 +354,12 @@
             </div>
 
             <div class="statBar statBar--bases">
-                <span>US Bases</span>
-                <span>{d.persistentBases}</span>
+                <span class="statLabel">Overseas bases</span>
+                <span class="statValue">{d.persistentBases}</span>
             </div>
             <div class="statBar statBar--troops">
-                <span>US Personnel</span>
-                <span>{d.troops.toLocaleString()}</span>
+                <span class="statLabel">Overseas troops</span>
+                <span class="statValue">{d.troops.toLocaleString()}</span>
             </div>
 
             <div class="detailListScroll">
@@ -130,8 +368,8 @@
                     <span>Location</span>
                 </div>
                 <ul class="baseList">
-                    {#each d.bases as base (base.id)}
-                        <li class="baseRow">
+                    {#each visibleBases as base (base.id)}
+                        <li class="baseRow" in:fly={{ y: 10, duration: 280 }}>
                             <span class="baseName">{base.name}</span>
                             <span class="baseCity">{base.city}</span>
                         </li>
@@ -141,18 +379,18 @@
         </div>
     {:else}
         <div class="statBar statBar--bases">
-            <span class="statLabel">Persistent bases</span>
+            <span class="statLabel">Overseas bases</span>
             <span class="statValue">{TOTAL_BASES}</span>
         </div>
         <div class="statBar statBar--troops">
-            <span class="statLabel">Troops (DMDC)</span>
+            <span class="statLabel">Overseas troops</span>
             <span class="statValue">{TOTAL_TROOPS.toLocaleString()}</span>
         </div>
 
         <div class="listScroll" bind:this={listContainer}>
             <ul class="rows">
-                {#each sortedEntries as e (e.id)}
-                    <li>
+                {#each visibleEntries as e (e.id)}
+                    <li in:fly={{ y: 10, duration: 280 }}>
                         <button
                             type="button"
                             class="row"
@@ -181,10 +419,61 @@
                 {/each}
             </ul>
         </div>
-    {/if}
+        {/if}
+    </div>
 </div>
 
 <style lang="scss">
+    .sidebarInner {
+        position: relative;
+    }
+
+    .viewWrapper {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .ghostBars {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 9;
+        pointer-events: none;
+    }
+
+    .ghostHeader {
+        position: absolute;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        gap: var(--_pad-md);
+        padding: var(--_pad-lg) 0;
+        z-index: 10;
+        pointer-events: none;
+        transform-origin: left center;
+    }
+
+    .ghostFlag {
+        width: 1.8rem;
+        height: auto;
+        aspect-ratio: 4 / 3;
+        flex-shrink: 0;
+        display: block;
+    }
+
+    .ghostName {
+        font-size: var(--_font-md);
+        font-weight: 700;
+        color: var(--_clr-900);
+        white-space: nowrap;
+        line-height: 1.1;
+    }
+
     .sidebarInner {
         display: flex;
         flex-direction: column;
@@ -227,7 +516,7 @@
         }
     }
 
-    /* Matches uganglobe `[slug]/+page.svelte` `.back` (flex, icon, type) ÔøΩ no pill background here. */
+    /* Matches uganglobe `[slug]/+page.svelte` `.back` (flex, icon, type) ù no pill background here. */
     .detailView .back.backBtn {
         display: flex;
         flex-flow: row nowrap;
@@ -285,34 +574,11 @@
 
     .detailCountry {
         margin: 0;
-        font-family: 'Montserrat', sans-serif;
+        font-family: 'Manrope', sans-serif;
         font-size: var(--_font-lg);
         font-weight: 700;
         color: var(--_clr-900);
         line-height: 1.1;
-    }
-
-    .detailView .statBar {
-        display: flex;
-        flex-flow: row nowrap;
-        align-items: center;
-        justify-content: space-between;
-        width: 100%;
-        box-sizing: border-box;
-        padding: var(--_pad-lg) var(--_pad-xl);
-        margin-bottom: var(--_pad-sm);
-        color: var(--_clr-0);
-        font-size: var(--_font-sm);
-        font-weight: 600;
-    }
-
-    .detailView .statBar--bases {
-        background: #bd2147;
-    }
-
-    .detailView .statBar--troops {
-        background: #2563eb;
-        margin-bottom: 0;
     }
 
     .baseListHeader {
@@ -379,8 +645,8 @@
         font-size: var(--_font-sm);
         font-weight: 600;
 
-        padding: var(--_pad-md) var(--_pad-lg);
-        margin-bottom: var(--_pad-sm);
+        padding: var(--_pad-lg) var(--_pad-xl);
+        margin-bottom: var(--_pad-md);
     }
 
     .statBar--bases {
@@ -390,6 +656,10 @@
     .statBar--troops {
         background-color: #2563eb;
         margin-bottom: var(--_pad-lg);
+    }
+
+    .detailView .statBar--troops {
+        margin-bottom: 0;
     }
 
     .statLabel {
@@ -460,7 +730,7 @@
                 display: flex;
                 flex-flow: row nowrap;
                 align-items: center;
-                gap: var(--_pad-sm);
+                gap: var(--_pad-md);
                 flex-shrink: 0;
             }
 
