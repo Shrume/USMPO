@@ -1,50 +1,18 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
     import Globe from '$lib/MIL-globe.svelte';
     import { ENTRIES, ORIGIN } from './data';
-    import RightIndicator from '$lib/SVGs/UGN-rightIndicator.svelte';
-    import DownIndicator from '$lib/SVGs/UGN-downIndicator.svelte';
-
-    let main: HTMLElement;
-    let sideBar: HTMLElement;
-
-    onMount(() => {
-        const observer = new IntersectionObserver(
-            (entries) => {
-                entries.forEach((entry) => {
-                    main.classList.toggle('halfWay', entry.isIntersecting);
-                });
-            },
-            { rootMargin: '0px 0px -50% 0px' }
-        );
-
-        observer.observe(sideBar);
-    });
 </script>
 
 <svelte:head>
     <meta name="theme-color" content="#f2f2f2" />
 </svelte:head>
 
-<main bind:this={main}>
-    <button
-        class="skip"
-        type="button"
-        on:click={() => {
-            sideBar.scrollIntoView();
-            sideBar.focus();
-        }}
-    >
-        <span class="visuallyHidden">skip three dimensional globe</span>
-        <RightIndicator />
-        <DownIndicator />
-    </button>
-
+<main>
     <div class="globeColumn">
         <Globe entries={ENTRIES} origin={ORIGIN} />
     </div>
 
-    <div class="sidebar" tabindex="-1" bind:this={sideBar}>
+    <div class="sidebar" tabindex="-1">
         <slot />
     </div>
 </main>
@@ -55,6 +23,9 @@
     :global {
         html {
             scroll-behavior: smooth;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
         }
 
         body {
@@ -97,7 +68,9 @@
 
             font-family: 'Manrope', sans-serif;
             background-color: var(--_clr-50);
-            overflow-y: scroll;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
         }
     }
 
@@ -114,53 +87,6 @@
         display: flex;
         flex-direction: column;
         align-items: stretch;
-    }
-
-    :global {
-        .skip {
-            position: fixed;
-            top: calc(var(--_pad-border) + var(--_pad-md));
-            left: calc(var(--_pad-border) + var(--_pad-md));
-            z-index: 100;
-            color: var(--_clr-150);
-
-            padding: var(--_pad-xl) var(--_pad-xl);
-            background-color: var(--_clr-900);
-            border-radius: var(--_border-radius-sm);
-            transform: translateY(calc(-1 * (var(--_pad-border) + var(--_pad-md) + 2 * var(--_pad-xl) + 15px)));
-
-            transition:
-                color var(--_trans-fast),
-                background-color var(--_trans-fast),
-                transform var(--_trans-fast);
-
-            .icon {
-                display: block;
-                width: 15px;
-            }
-
-            #downIndicator {
-                display: none;
-            }
-
-            &:hover,
-            &:focus {
-                transform: translateY(0px);
-                color: var(--_clr-100);
-                background-color: var(--_clr-950);
-            }
-
-            &:focus-visible {
-                color: var(--_clr-0);
-                background-color: var(--_clr-accent-700);
-            }
-
-            &:active {
-                transform: translateY(0px);
-                color: var(--_clr-0);
-                background-color: var(--_clr-1000);
-            }
-        }
     }
 
     .sidebar {
@@ -188,6 +114,7 @@
             max-height: 100vh;
             overflow: hidden;
             align-items: stretch;
+            box-sizing: border-box;
         }
 
         .globeColumn {
@@ -214,6 +141,10 @@
         :global {
             body {
                 --_pad-border: 25px;
+                overflow-y: auto;
+            }
+            html {
+                overflow: auto;
             }
         }
 
@@ -234,39 +165,6 @@
             max-width: 500px;
             min-height: unset;
             overflow: visible;
-        }
-
-        :global {
-            .skip {
-                position: fixed;
-                top: unset;
-                left: unset;
-                bottom: calc(var(--_pad-xl) + env(safe-area-inset-bottom));
-                z-index: 100;
-                color: var(--_clr-150);
-
-                padding: var(--_pad-xl) var(--_pad-xl);
-                background-color: var(--_clr-900);
-                border-radius: var(--_border-radius-sm);
-                transform: translateY(0px);
-
-                transition:
-                    color var(--_trans-fast),
-                    background-color var(--_trans-fast),
-                    transform var(--_trans-fast);
-
-                #rightIndicator {
-                    display: none;
-                }
-
-                #downIndicator {
-                    display: block;
-                }
-            }
-
-            .halfWay .skip {
-                transform: translateY(calc(var(--_pad-xl) + 2 * var(--_pad-xl) + 15px + env(safe-area-inset-bottom)));
-            }
         }
 
         .sidebar {

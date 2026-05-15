@@ -31,6 +31,11 @@
     let allowFullscreen = false;
     let isFullscreen = false;
 
+    let animRAF: number | null = null;
+    let animStart: number | null = null;
+    const ANIM_STAGGER = 0; // ms between each arc starting
+    const ANIM_DURATION = 1300; // ms for each arc to fully draw
+
     let entriesByFlagCode: Map<string, CountryEntry> = new Map();
 
     /** three-globe default when `polygonAltitude` is not set in the init chain */
@@ -86,9 +91,118 @@
         return '#d1d1d1';
     }
 
+    /** Same angular distance as d3-geo `geoDistance` for [lng, lat] in radians (unit sphere). */
+    function geoDistanceRadians(a: [number, number], b: [number, number]): number {
+        const [l0, p0] = a;
+        const [l1, p1] = b;
+        return (
+            2 *
+            Math.asin(
+                Math.sqrt(
+                    Math.sin((p1 - p0) / 2) ** 2 +
+                        Math.cos(p0) * Math.cos(p1) * Math.sin((l1 - l0) / 2) ** 2
+                )
+            )
+        );
+    }
+
     function getPolygonAltitude(): number {
         return POLYGON_BASE_ALTITUDE;
     }
+
+    function fanOrigin(orig: { lat: number; lng: number }, dest: { lat: number; lng: number }, radiusDeg = 1) {
+        const oLat = orig.lat * Math.PI / 180;
+        const oLng = orig.lng * Math.PI / 180;
+        const dLat = dest.lat * Math.PI / 180;
+        const dLng = dest.lng * Math.PI / 180;
+        const bearing = Math.atan2(
+            Math.sin(dLng - oLng) * Math.cos(dLat),
+            Math.cos(oLat) * Math.sin(dLat) - Math.sin(oLat) * Math.cos(dLat) * Math.cos(dLng - oLng)
+        );
+        return {
+            lat: orig.lat + radiusDeg * Math.cos(bearing),
+            lng: orig.lng + radiusDeg * Math.sin(bearing)
+        };
+    }
+
+    function easeOut(t: number): number {
+        return 1 - Math.pow(1 - t, 3);
+    }
+
+    function startArcAnimation() {
+        if (!$UGNglobe) return;
+        if (animRAF) cancelAnimationFrame(animRAF);
+
+        const sorted = [...entries]
+            .map((e) => ({
+                e,
+                dist: Math.hypot(e.lat - origin.lat, e.lng - origin.lng)
+            }))
+            .sort((a, b) => a.dist - b.dist)
+            .map(({ e }, i) => ({ e, delay: i * ANIM_STAGGER }));
+
+        const progressMap = new Map<string, number>(entries.map((e) => [e.id, 0]));
+
+        animStart = null;
+
+        function frame(ts: number) {
+            if (!animStart) animStart = ts;
+            const elapsed = ts - animStart;
+            let allDone = true;
+
+            sorted.forEach(({ e, delay }) => {
+                const t = Math.max(0, Math.min(1, (elapsed - delay) / ANIM_DURATION));
+                const p = easeOut(t);
+                progressMap.set(e.id, p);
+                if (t < 1) allDone = false;
+            });
+
+            if ($UGNglobe) {
+                $UGNglobe
+                    .arcDashLength((arc: any) => progressMap.get((arc as CountryEntry).id) ?? 0)
+                    .arcDashGap(2)
+                    .arcDashInitialGap((arc: any) => {
+                        const p = progressMap.get((arc as CountryEntry).id) ?? 0;
+                        return 1 - p;
+                    })
+                    .arcDashAnimateTime(0);
+            }
+
+            if (!allDone) {
+                animRAF = requestAnimationFrame(frame);
+            } else {
+                // Freeze solid
+                if ($UGNglobe) {
+                    $UGNglobe
+                        .arcDashLength(1)
+                        .arcDashGap(0)
+                        .arcDashInitialGap(0)
+                        .arcDashAnimateTime(0);
+                }
+                animRAF = null;
+            }
+        }
+
+        animRAF = requestAnimationFrame(frame);
+    }
+
+    $: rankMap = (() => {
+        const orig = origin;
+        function bearing(dest: CountryEntry) {
+            const oLat = orig.lat * Math.PI / 180;
+            const oLng = orig.lng * Math.PI / 180;
+            const dLat = dest.lat * Math.PI / 180;
+            const dLng = dest.lng * Math.PI / 180;
+            return Math.atan2(
+                Math.sin(dLng - oLng) * Math.cos(dLat),
+                Math.cos(oLat) * Math.sin(dLat) - Math.sin(oLat) * Math.cos(dLat) * Math.cos(dLng - oLng)
+            );
+        }
+        const sorted = [...entries].map((e) => ({ e, b: bearing(e) })).sort((a, b) => a.b - b.b);
+        const m = new Map<string, number>();
+        sorted.forEach(({ e }, i) => m.set(e.id, i));
+        return m;
+    })();
 
     function flyToEntry(e: CountryEntry) {
         const g = get(UGNglobe);
@@ -182,7 +296,9 @@
             .backgroundColor('#ffffff')
             .globeMaterial(new MeshBasicMaterial({ color: '#f2f2f2' }))
             .showAtmosphere(false)
-            .onGlobeReady(() => console.log('ready'))
+            .onGlobeReady(() => {
+                setTimeout(() => startArcAnimation(), 800);
+            })
             .polygonsData(countries.features)
             .polygonCapColor((feature: any) =>
                 getPolygonCapColor(feature as CountryPolygonFeature, null)
@@ -219,10 +335,23 @@
                     flyToEntry(entry);
                 }
             })
-            .arcStartLat(() => origin.lat)
-            .arcStartLng(() => origin.lng)
+            .arcStartLat((arc: any) => fanOrigin(origin, arc as CountryEntry).lat)
+            .arcStartLng((arc: any) => fanOrigin(origin, arc as CountryEntry).lng)
             .arcEndLat((arc: any) => (arc as CountryEntry).lat)
             .arcEndLng((arc: any) => (arc as CountryEntry).lng)
+            .arcAltitude((arc: any) => {
+                const e = arc as CountryEntry;
+                const fo = fanOrigin(origin, e);
+                const startLng = (fo.lng * Math.PI) / 180;
+                const startLat = (fo.lat * Math.PI) / 180;
+                const endLng = (e.lng * Math.PI) / 180;
+                const endLat = (e.lat * Math.PI) / 180;
+                const altAutoScale = 0.5;
+                const baseAlt = (geoDistanceRadians([startLng, startLat], [endLng, endLat]) / 2) * altAutoScale;
+                const rank = rankMap.get(e.id) ?? 0;
+                const n = entries.length;
+                return baseAlt + (n ? (rank / n) * 0.15 : 0);
+            })
             .arcLabel(
                 (arc: any) => {
                     const e = arc as CountryEntry;
@@ -238,10 +367,11 @@
 </div>`;
                 }
             )
-            .arcStroke((arc: any) => {
-                const e = arc as CountryEntry;
-                return 0.8 + Math.min(e.persistentBases / 20, 1.5);
-            })
+            .arcStroke(0.8)
+            .arcDashLength(0)
+            .arcDashGap(1)
+            .arcDashInitialGap(0)
+            .arcDashAnimateTime(0)
             .arcCurveResolution(32)
             .arcsTransitionDuration(0)
             .arcColor((arc: any) => getArcColorForHover(arc as CountryEntry, null))
@@ -293,6 +423,7 @@
         checkFullscreen();
 
         return () => {
+            if (animRAF) cancelAnimationFrame(animRAF);
             intersectionObserver.unobserve(scrollToTopObserver);
             resizeObserver.unobserve(globeContainer);
             const g = get(UGNglobe);
@@ -390,7 +521,7 @@
         /* Top / left / bottom gutter; flush to the sidebar on the right (no column gap). */
         width: calc(100% - var(--_pad-border));
         height: calc(100vh - 2 * var(--_pad-border));
-        margin: var(--_pad-border) 0 var(--_pad-border) var(--_pad-border);
+        margin: var(--_pad-border) 0 0 var(--_pad-border);
         padding: 0;
         box-sizing: border-box;
         background-color: #ffffff;
@@ -469,7 +600,10 @@
 
             padding: var(--_pad-xl) var(--_pad-xl);
             background-color: var(--_clr-100);
+            border: none;
             border-radius: 0;
+            cursor: pointer;
+            font: inherit;
 
             transition:
                 color var(--_trans-fast),
