@@ -10,7 +10,8 @@
         UGNclickedEntry,
         UGNglobeClicked,
         UGNaltOffset,
-        UGNgoHome
+        UGNgoHome,
+        UGNgotoEntry
     } from '../store/military-store';
     import type { CountryEntry } from '../routes/military/data';
     import countries from '$lib/globe-countries.json';
@@ -314,10 +315,10 @@
                 }
                 const cur = get(UGNclickedEntry);
                 if (cur?.id === entry.id) {
-                    $UGNclickedEntry = null;
+                    UGNgoHome.update((n) => n + 1);
                     $UGNglobeClicked = null;
                 } else {
-                    $UGNclickedEntry = entry;
+                    $UGNgotoEntry = entry;
                     $UGNglobeClicked = entry;
                     flyToEntry(entry);
                 }
@@ -372,10 +373,10 @@
                 const e = arc as CountryEntry;
                 const cur = get(UGNclickedEntry);
                 if (cur?.id === e.id) {
-                    $UGNclickedEntry = null;
+                    UGNgoHome.update((n) => n + 1);
                     $UGNglobeClicked = null;
                 } else {
-                    $UGNclickedEntry = e;
+                    $UGNgotoEntry = e;
                     $UGNglobeClicked = e;
                     flyToEntry(e);
                 }

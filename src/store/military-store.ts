@@ -8,6 +8,8 @@ export const UGNhoveredEntry: Writable<CountryEntry | null> = writable(null);
 /** Persistent selection (list or globe click). */
 export const UGNclickedEntry: Writable<CountryEntry | null> = writable(null);
 
+export const UGNgotoEntry: Writable<CountryEntry | null> = writable(null);
+
 /**
  * Globe-only signal for list autoscroll: arc/polygon hover (incl. null on leave) and
  * arc/polygon click selection/deselection. List UI never writes this store.

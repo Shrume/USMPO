@@ -8,7 +8,8 @@
         UGNhoveredEntry,
         UGNclickedEntry,
         UGNglobeClicked,
-        UGNgoHome
+        UGNgoHome,
+        UGNgotoEntry
     } from '../../store/military-store';
     import { ENTRIES, TOTAL_BASES, TOTAL_TROOPS } from './data';
     import type { CountryEntry, Base } from './data';
@@ -85,6 +86,12 @@
         if ($UGNclickedEntry !== null) animateBack();
     }
 
+    $: if ($UGNgotoEntry !== null) {
+        const entry = $UGNgotoEntry;
+        UGNgotoEntry.set(null);
+        animateForward(entry, true);
+    }
+
     /**
      * Prefer the inner list (`.listScroll`) when it actually scrolls; otherwise the layout
      * `.sidebar` often owns overflow when `main` grew with content and `body` scrolled instead.
@@ -140,7 +147,7 @@
         );
     }
 
-    async function animateForward(entry: CountryEntry) {
+    async function animateForward(entry: CountryEntry, skipFly = false) {
         if (animating) return;
         animating = true;
         lastEntry = entry;
@@ -201,7 +208,7 @@
 
         $UGNclickedEntry = entry;
         $UGNglobeClicked = null;
-        flyToEntry(entry);
+        if (!skipFly) flyToEntry(entry);
         await tick();
 
         const detailFlagEl = sidebarEl.querySelector('.detailFlag');
