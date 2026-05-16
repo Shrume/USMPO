@@ -1,7 +1,6 @@
 <svg
-    id="Layer_2"
     class="icon"
     xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 15 15">
-    <path fill="currentcolor" d="m14,8.5H1c-.55,0-1-.45-1-1s.45-1,1-1h13c.55,0,1,.45,1,1s-.45,1-1,1Z"/>
+    viewBox="0 -960 960 960">
+    <path fill="currentcolor" d="M200-440v-80h560v80H200Z"/>
 </svg>

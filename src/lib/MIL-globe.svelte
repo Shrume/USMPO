@@ -20,6 +20,8 @@
     import UpIndicactor from '$lib/SVGs/UGN-upIndicactor.svelte';
     import Info from '$lib/SVGs/UGN-info.svelte';
     import Close from '$lib/SVGs/UGN-close.svelte';
+    import LightMode from '$lib/SVGs/UGN-lightMode.svelte';
+    import DarkMode from '$lib/SVGs/UGN-darkMode.svelte';
 
     export let entries: CountryEntry[];
     export let origin: { lat: number; lng: number };
@@ -31,6 +33,12 @@
 
     let curAlt = 0;
     let aboutOpen = false;
+    let darkMode = false;
+
+    $: if (typeof document !== 'undefined') {
+        document.body.classList.toggle('dark', darkMode);
+    }
+
     let canInteract = false;
     let globeMoved = false;
     let isResetting = false;
@@ -54,9 +62,6 @@
 
     $: if ($UGNglobe) {
         $UGNglobe.arcColor((arc: any) => getArcColorForHover(arc as CountryEntry, activeEntry));
-        $UGNglobe.polygonCapColor((feature: any) =>
-            getPolygonCapColor(feature as CountryPolygonFeature, activeEntry)
-        );
     }
 
     /** Match globe.gl size to the mount box (same box as the visible canvas). */
@@ -95,6 +100,40 @@
         if (!iso) return '#d1d1d1';
         if (active && iso === active.flagCode) return active.color;
         return '#d1d1d1';
+    }
+
+    $: if ($UGNglobe) {
+        $UGNglobe.backgroundColor(darkMode ? '#1a1a1a' : '#ffffff');
+        ($UGNglobe as any).globeMaterial().color.set(darkMode ? '#232323' : '#f2f2f2');
+    }
+
+    $: if ($UGNglobe) {
+        $UGNglobe.polygonCapColor((feature: any) => {
+            const iso = (feature as CountryPolygonFeature | null)?.properties?.ISO_A2?.toLowerCase();
+            const entry = iso ? entriesByFlagCode.get(iso) ?? null : null;
+            if (!entry) return darkMode ? '#2a2a2a' : '#d1d1d1';
+            const isActive =
+                $UGNhoveredEntry?.id === entry.id || $UGNclickedEntry?.id === entry.id;
+            return isActive ? entry.color : darkMode ? '#2a2a2a' : '#d1d1d1';
+        });
+    }
+
+    $: if ($UGNglobe) {
+        $UGNglobe.arcLabel((arc: any) => {
+            const e = arc as CountryEntry;
+            const bg = darkMode ? '#000000' : '#ffffff';
+            const textColor = darkMode ? '#c0c0c0' : '#1a1a1a';
+            return `<div style="font-family:'Manrope',sans-serif; display:inline-flex; flex-direction:column; gap:10px; padding:8px 10px; background:${bg}; border-radius:0; white-space:nowrap">
+  <div style="display:flex; align-items:center; gap:6px">
+    <img src="https://flagicons.lipis.dev/flags/4x3/${e.flagCode}.svg" alt="" style="width:16px; height:12px; object-fit:cover; flex-shrink:0" />
+    <span style="font-weight:700; font-size:12px; color:${textColor}">${e.country.replace(/\s*\(.*?\)/g, '')}</span>
+  </div>
+  <div style="display:flex; gap:10px">
+    <span style="background:#bd2147; color:#fff; padding:1px 0; font-size:12px; line-height:1.4; font-weight:600; width:3.5rem; text-align:center; display:inline-block">${e.persistentBases}</span>
+    <span style="background:#2563eb; color:#fff; padding:1px 0; font-size:12px; line-height:1.4; font-weight:600; width:3.5rem; text-align:center; display:inline-block">${e.troops.toLocaleString()}</span>
+  </div>
+</div>`;
+        });
     }
 
     /** Same angular distance as d3-geo `geoDistance` for [lng, lat] in radians (unit sphere). */
@@ -269,7 +308,11 @@
     }
 
     function clearSelectionStores(): void {
-        $UGNclickedEntry = null;
+        if (get(UGNclickedEntry) !== null) {
+            UGNgoHome.update((n) => n + 1);
+        } else {
+            $UGNclickedEntry = null;
+        }
         $UGNhoveredEntry = null;
         $UGNglobeClicked = null;
     }
@@ -372,7 +415,7 @@
             .arcLabel(
                 (arc: any) => {
                     const e = arc as CountryEntry;
-                    return `<div style="font-family:'Manrope',sans-serif; display:inline-flex; flex-direction:column; gap:8px; padding:10px 10px; background:#fff; border-radius:0; border:1px solid rgba(0,0,0,0.1); box-shadow:0 1px 4px rgba(0,0,0,0.12); white-space:nowrap">
+                    return `<div style="font-family:'Manrope',sans-serif; display:inline-flex; flex-direction:column; gap:8px; padding:10px 10px; background:#fff; border-radius:0; white-space:nowrap">
   <div style="display:flex; align-items:center; gap:6px">
     <img src="https://flagicons.lipis.dev/flags/4x3/${e.flagCode}.svg" alt="" style="width:16px; height:12px; object-fit:cover; flex-shrink:0" />
     <span style="font-weight:700; font-size:12px; color:#1a1a1a">${e.country.replace(/\s*\(.*?\)/g, '')}</span>
@@ -460,7 +503,7 @@
 <svelte:head>
     <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=my_location"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=my_location"
     />
 </svelte:head>
 
@@ -491,7 +534,7 @@
         {#if globeMoved}
             <button class="zoom zoomHome" type="button" on:click={resetView}>
                 <span class="visuallyHidden">reset view</span>
-                <span class="myLocationIcon" aria-hidden="true">my_location</span>
+                <span class="material-symbols-outlined" aria-hidden="true">my_location</span>
             </button>
         {/if}
         <button
@@ -515,6 +558,26 @@
     </div>
 
     <div class="aboutWrap">
+        <div class="buttonStack">
+            <button class="zoom" type="button" on:click={() => (darkMode = !darkMode)}>
+                <span class="visuallyHidden">{darkMode ? 'switch to light mode' : 'switch to dark mode'}</span>
+                {#if darkMode}
+                    <LightMode />
+                {:else}
+                    <DarkMode />
+                {/if}
+            </button>
+            <button class="zoom" type="button" on:click={() => (aboutOpen = !aboutOpen)}>
+                <span class="visuallyHidden">{aboutOpen ? 'close about' : 'about this project'}</span>
+                <span class="aboutIcon">
+                    {#if aboutOpen}
+                        <Close />
+                    {:else}
+                        <Info />
+                    {/if}
+                </span>
+            </button>
+        </div>
         {#if aboutOpen}
             <div class="aboutPanel">
                 <p>Data sourced from the <a href="https://dwp.dmdc.osd.mil/dwp/app/main" target="_blank" rel="noopener">Defense Manpower Data Center (DMDC)</a> and the <a href="https://crsreports.congress.gov/product/pdf/R/R48123" target="_blank" rel="noopener">Congressional Research Service Report R48123</a>.</p>
@@ -522,16 +585,6 @@
                 <p>A term project for <em>Propaganda</em> at RISD, taught by <a href="https://www.risd.edu/academics/history-philosophy-and-social-sciences/faculty/tom-roberts" target="_blank" rel="noopener">Tom Roberts</a> in his final semester after 43 years of teaching.</p>
             </div>
         {/if}
-        <button class="zoom" type="button" on:click={() => (aboutOpen = !aboutOpen)}>
-            <span class="visuallyHidden">{aboutOpen ? 'close about' : 'about this project'}</span>
-            <span class="aboutIcon">
-                {#if aboutOpen}
-                    <Close />
-                {:else}
-                    <Info />
-                {/if}
-            </span>
-        </button>
     </div>
 
     <div class="scrollToTop-observer" bind:this={scrollToTopObserver}></div>
@@ -556,6 +609,24 @@
         body {
             --_scrollToTop-height: calc(2 * var(--_pad-xl) + 15px);
         }
+    }
+
+    :global(body.dark) {
+        --_clr-0: #121212;
+        --_clr-50: #1a1a1a;
+        --_clr-100: #252525;
+        --_clr-150: #2e2e2e;
+        --_clr-200: #383838;
+        --_clr-300: #484848;
+        --_clr-400: #5c5c5c;
+        --_clr-500: #717171;
+        --_clr-600: #898989;
+        --_clr-700: #a0a0a0;
+        --_clr-800: #c0c0c0;
+        --_clr-900: #d8d8d8;
+        --_clr-950: #ebebeb;
+        --_clr-1000: #f5f5f5;
+        background-color: #121212;
     }
 
     .globeContainer {
@@ -605,7 +676,7 @@
         box-sizing: border-box;
         padding: var(--_pad-md) var(--_pad-lg);
         background-color: #2d3436;
-        color: var(--_clr-0);
+        color: #ffffff;
         font-size: var(--_font-sm);
         font-weight: 600;
     }
@@ -626,6 +697,11 @@
         white-space: nowrap;
     }
 
+    :global(body.dark) .projectTitle {
+        background-color: #e0e0e0;
+        color: #2d3436;
+    }
+
     .controls {
         display: flex;
         flex-flow: column nowrap;
@@ -638,6 +714,10 @@
 
         /* Transparent wrapper so flex `gap` shows the WebGL canvas, not the tile gray. */
         background: transparent;
+
+        > button:last-child {
+            margin-top: 10px;
+        }
 
         .zoom {
             display: flex;
@@ -660,7 +740,16 @@
 
             :global(.icon) {
                 display: block;
-                width: 15px;
+                width: 18px;
+            }
+
+            .material-symbols-outlined {
+                font-family: 'Material Symbols Outlined';
+                font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+                font-size: 18px;
+                line-height: 1;
+                display: block;
+                color: inherit;
             }
 
             &:hover,
@@ -692,24 +781,21 @@
         margin-bottom: var(--_pad-md);
     }
 
-    .myLocationIcon {
-        font-family: 'Material Symbols Outlined';
-        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        font-size: 20px;
-        line-height: 1;
-        display: block;
-        color: inherit;
-    }
-
     .aboutWrap {
         position: absolute;
         bottom: var(--_pad-border);
         left: var(--_pad-border);
         z-index: 2;
         display: flex;
+        flex-direction: row;
+        align-items: flex-end;
+        gap: var(--_pad-md);
+    }
+
+    .buttonStack {
+        display: flex;
         flex-direction: column;
-        align-items: flex-start;
-        gap: 0;
+        gap: var(--_pad-md);
     }
 
     .aboutWrap .zoom {
@@ -731,7 +817,7 @@
 
         :global(.icon) {
             display: block;
-            width: 20px;
+            width: 18px;
         }
 
         &:hover,
@@ -759,7 +845,7 @@
 
         :global(.icon) {
             display: block;
-            width: 15px;
+            width: 18px;
         }
     }
 
@@ -767,7 +853,6 @@
         background: var(--_clr-50);
         border-radius: 0;
         padding: var(--_pad-border);
-        margin-bottom: var(--_pad-md);
         font-size: var(--_font-sm);
         color: var(--_clr-800);
         max-width: 480px;
@@ -819,7 +904,7 @@
 
             .icon {
                 display: block;
-                width: 15px;
+                width: 18px;
             }
         }
     }

@@ -1,7 +1,6 @@
 <svg
-    id="plus"
     class="icon"
     xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 15 15">
-    <path fill="currentcolor" d="m14,6.5h-5.5V1c0-.55-.45-1-1-1s-1,.45-1,1v5.5H1c-.55,0-1,.45-1,1s.45,1,1,1h5.5v5.5c0,.55.45,1,1,1s1-.45,1-1v-5.5h5.5c.55,0,1-.45,1-1s-.45-1-1-1Z"/>
+    viewBox="0 -960 960 960">
+    <path fill="currentcolor" d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/>
 </svg>

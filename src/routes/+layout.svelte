@@ -2,6 +2,10 @@
     import '../styles/global.scss';
 </script>
 
+<svelte:head>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+</svelte:head>
+
 <slot />
 
 <style lang="scss">
