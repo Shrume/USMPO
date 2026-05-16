@@ -4,6 +4,7 @@
 
 <svelte:head>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>US Military Projection Overseas</title>
 </svelte:head>
 
 <slot />
